@@ -5,7 +5,7 @@ from flwr.app import ArrayRecord, ConfigRecord, Context, MetricRecord
 from flwr.serverapp import Grid, ServerApp
 from flwr.serverapp.strategy import FedAvg
 
-from thesis_baseline.task import Net, load_centralized_dataset, test
+from thesis_baseline.task import Net, load_centralized_dataset, set_seed, test
 
 # Create ServerApp
 app = ServerApp()
@@ -21,6 +21,9 @@ def main(grid: Grid, context: Context) -> None:
     lr: float = context.run_config["learning-rate"]
 
     # Load global model
+    seed = int(context.run_config["seed"])
+    set_seed(seed)
+
     global_model = Net()
     arrays = ArrayRecord(global_model.state_dict())
 

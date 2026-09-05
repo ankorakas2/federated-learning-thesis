@@ -8,6 +8,7 @@ from flwr_datasets import FederatedDataset
 from flwr_datasets.partitioner import IidPartitioner
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose, Normalize, ToTensor
+import random
 
 
 class Net(nn.Module):
@@ -41,8 +42,17 @@ def apply_transforms(batch):
     batch["img"] = [pytorch_transforms(img) for img in batch["img"]]
     return batch
 
+def set_seed(seed: int):
+    """Set random seeds for reproducible CPU experiments."""
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.use_deterministic_algorithms(True)
 
-def load_data(partition_id: int, num_partitions: int, batch_size: int):
+def load_data(
+    partition_id: int,
+    num_partitions: int,
+    batch_size: int,
+    seed: int,):
     """Load partition CIFAR10 data."""
     # Only initialize `FederatedDataset` once
     global fds
@@ -51,14 +61,22 @@ def load_data(partition_id: int, num_partitions: int, batch_size: int):
         fds = FederatedDataset(
             dataset="uoft-cs/cifar10",
             partitioners={"train": partitioner},
+	    seed=seed,
         )
     partition = fds.load_partition(partition_id)
     # Divide data on each node: 80% train, 20% test
-    partition_train_test = partition.train_test_split(test_size=0.2, seed=42)
-    # Construct dataloaders
+
+    client_seed = seed + partition_id
+
+    partition_train_test = partition.train_test_split(test_size=0.2, seed=client_seed)
+    # Construct dataloader
     partition_train_test = partition_train_test.with_transform(apply_transforms)
+
+    generator = torch.Generator()
+    generator.manual_seed(client_seed)
+
     trainloader = DataLoader(
-        partition_train_test["train"], batch_size=batch_size, shuffle=True
+        partition_train_test["train"], batch_size=batch_size, shuffle=True, generator=generator,
     )
     testloader = DataLoader(partition_train_test["test"], batch_size=batch_size)
     return trainloader, testloader
