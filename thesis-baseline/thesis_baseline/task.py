@@ -1,4 +1,4 @@
-"""pytorchexample: A Flower / PyTorch app."""
+"""Federated Learning thesis baseline using Flower and PyTorch."""
 
 import torch
 import torch.nn as nn
