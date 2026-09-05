@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fl-thesis-baseline"
+version = "0.1.0"
+description = "Federated Learning MSc thesis baseline with Flower and PyTorch"
+license = {file = "LICENSE"}
+dependencies = [
+    "flwr>=1.36.0,<1.37.0",
+    "flwr-datasets[vision] @ git+https://github.com/flwrlabs/flower.git@d2d0daf6bb3b09bd858fee22041d410840979d0a#subdirectory=datasets",
+    "torch==2.10.0",
+    "torchvision==0.25.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["thesis_baseline"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.flwr.app]
+publisher = "anestis"
+fab-format-version = 1
+flwr-version-target = "1.36.0"
+
+[tool.flwr.app.components]
+serverapp = "thesis_baseline.server_app:app"
+clientapp = "thesis_baseline.client_app:app"
+
+[tool.flwr.app.config]
+num-server-rounds = 3
+fraction-evaluate = 1.0
+local-epochs = 1
+learning-rate = 0.1
+batch-size = 32
+save-model = false
