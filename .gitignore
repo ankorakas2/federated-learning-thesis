@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+results/
+.env
+.DS_Store
+quickstart-pytorch-working-backup/
