@@ -24,6 +24,14 @@ def train(msg: Message, context: Context):
 
     # Load the data
     partition_id = context.node_config["partition-id"]
+    
+    server_round = msg.content["config"]["server-round"]
+
+    print(
+        f"[TRAIN] round={server_round} "
+        f"partition_id={partition_id}"
+    )
+
     num_partitions = context.node_config["num-partitions"]
     batch_size = context.run_config["batch-size"]
     seed = int(context.run_config["seed"])

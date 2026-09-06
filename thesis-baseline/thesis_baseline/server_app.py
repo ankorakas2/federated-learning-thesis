@@ -16,6 +16,7 @@ def main(grid: Grid, context: Context) -> None:
     """Main entry point for the ServerApp."""
 
     # Read run config
+    fraction_train: float = context.run_config["fraction-train"]
     fraction_evaluate: float = context.run_config["fraction-evaluate"]
     num_rounds: int = context.run_config["num-server-rounds"]
     lr: float = context.run_config["learning-rate"]
@@ -28,7 +29,12 @@ def main(grid: Grid, context: Context) -> None:
     arrays = ArrayRecord(global_model.state_dict())
 
     # Initialize FedAvg strategy
-    strategy = FedAvg(fraction_evaluate=fraction_evaluate)
+    strategy = FedAvg(
+        fraction_train=fraction_train, 
+        fraction_evaluate=fraction_evaluate, 
+        min_train_nodes=2,
+        min_evaluate_nodes=2,
+        min_available_nodes=4,)
 
     # Start strategy, run FedAvg for `num_rounds`
     result = strategy.start(
