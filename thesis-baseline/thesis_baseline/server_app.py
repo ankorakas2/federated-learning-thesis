@@ -3,7 +3,7 @@
 import torch
 from flwr.app import ArrayRecord, ConfigRecord, Context, MetricRecord
 from flwr.serverapp import Grid, ServerApp
-from flwr.serverapp.strategy import FedAvg
+from thesis_baseline.strategy import DeterministicFedAvg
 
 from thesis_baseline.task import Net, load_centralized_dataset, set_seed, test
 
@@ -29,7 +29,8 @@ def main(grid: Grid, context: Context) -> None:
     arrays = ArrayRecord(global_model.state_dict())
 
     # Initialize FedAvg strategy
-    strategy = FedAvg(
+    strategy = DeterministicFedAvg(
+	sampling_seed=seed,
         fraction_train=fraction_train, 
         fraction_evaluate=fraction_evaluate, 
         min_train_nodes=2,
