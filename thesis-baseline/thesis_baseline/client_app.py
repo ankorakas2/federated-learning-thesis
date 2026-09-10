@@ -29,7 +29,9 @@ def train(msg: Message, context: Context):
 
     print(
         f"[TRAIN] round={server_round} "
-        f"partition_id={partition_id}"
+        f"node_id={context.node_id} "
+        f"partition_id={partition_id}",
+        flush=True,
     )
 
     num_partitions = context.node_config["num-partitions"]
