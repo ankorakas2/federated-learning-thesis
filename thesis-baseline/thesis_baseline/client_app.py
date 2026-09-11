@@ -1,6 +1,7 @@
 """Federated Learning thesis baseline using Flower and PyTorch."""
 
 import torch
+from time import perf_counter
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
 
@@ -51,6 +52,8 @@ def train(msg: Message, context: Context):
         seed,
     )
 
+    train_start = perf_counter()
+
     train_loss = train_fn(
         model,
         trainloader,
@@ -59,10 +62,13 @@ def train(msg: Message, context: Context):
         device,
     )
 
+    local_train_seconds = perf_counter() - train_start
+
     model_record = ArrayRecord(model.state_dict())
 
     metrics = {
         "train_loss": train_loss,
+        "local_train_seconds": local_train_seconds,
         "num-examples": len(trainloader.dataset),
     }
 
