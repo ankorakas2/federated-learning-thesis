@@ -6,3 +6,4 @@ results/
 .env
 .DS_Store
 quickstart-pytorch-working-backup/
+flower-secure-aggregation/
