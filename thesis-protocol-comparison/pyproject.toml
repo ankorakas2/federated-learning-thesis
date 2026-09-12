@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fl-thesis-compare"
+version = "0.1.0"
+description = "Plain FedAvg versus SecAgg+ comparison for MSc thesis"
+license = {file = "LICENSE"}
+dependencies = [
+    "flwr[simulation]>=1.36.0,<1.37.0",
+    "flwr-datasets[vision]>=0.6.0",
+    "torch==2.10.0",
+    "torchvision==0.25.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["thesis_compare"]
+
+[tool.flwr.app]
+publisher = "anestis"
+fab-format-version = 1
+flwr-version-target = "1.36.0"
+
+[tool.flwr.app.components]
+serverapp = "thesis_compare.server_app:app"
+clientapp = "thesis_compare.client_app:app"
+
+[tool.flwr.app.config]
+protocol = "plain"
+num-clients = 5
+num-server-rounds = 1
+local-epochs = 1
+learning-rate = 0.1
+batch-size = 32
+seed = 42
+
+# SecAgg+ configuration
+num-shares = 3
+reconstruction-threshold = 2
+max-weight = 9000
