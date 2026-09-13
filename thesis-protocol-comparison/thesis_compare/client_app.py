@@ -1,12 +1,18 @@
-"""Shared ClientApp for Plain FedAvg and SecAgg+."""
+"""Shared instrumented ClientApp for Plain FedAvg and SecAgg+."""
 
+import os
 from time import perf_counter
 
+import numpy as np
 import torch
 from flwr.client import ClientApp, NumPyClient
 from flwr.client.mod import secaggplus_mod
 from flwr.common import Context
 
+from thesis_compare.measurement import (
+    append_message_trace,
+    message_nbytes,
+)
 from thesis_compare.task import (
     get_weights,
     load_data,
@@ -18,23 +24,40 @@ from thesis_compare.task import (
 
 
 def protocol_mod(msg, context, call_next):
-    """Enable SecAgg+ only when protocol=secagg."""
+    """Enable SecAgg+ conditionally and trace serialized traffic."""
 
-    protocol = str(
-        context.run_config["protocol"]
+    protocol = str(context.run_config["protocol"])
+    partition_id = int(
+        context.node_config["partition-id"]
     )
 
+    incoming_bytes = message_nbytes(msg)
+
     if protocol == "secagg":
-        return secaggplus_mod(
+        out_msg = secaggplus_mod(
             msg,
             context,
             call_next,
         )
+    else:
+        out_msg = call_next(
+            msg,
+            context,
+        )
 
-    return call_next(
-        msg,
-        context,
+    outgoing_bytes = message_nbytes(out_msg)
+
+    append_message_trace(
+        os.environ.get("THESIS_COMM_LOG", ""),
+        protocol=protocol,
+        partition_id=partition_id,
+        message_type=str(msg.metadata.message_type),
+        group_id=str(msg.metadata.group_id),
+        incoming_bytes=incoming_bytes,
+        outgoing_bytes=outgoing_bytes,
     )
+
+    return out_msg
 
 
 class FlowerClient(NumPyClient):
@@ -50,12 +73,9 @@ class FlowerClient(NumPyClient):
         seed,
     ):
         self.partition_id = partition_id
-
         self.net = make_net(seed)
-
         self.trainloader = trainloader
         self.valloader = valloader
-
         self.local_epochs = local_epochs
         self.learning_rate = learning_rate
 
@@ -66,7 +86,12 @@ class FlowerClient(NumPyClient):
         )
 
     def fit(self, parameters, config):
-        """Perform identical local training."""
+        """Perform local training and report raw model payload."""
+
+        download_model_bytes = sum(
+            np.asarray(array).nbytes
+            for array in parameters
+        )
 
         set_weights(
             self.net,
@@ -87,12 +112,21 @@ class FlowerClient(NumPyClient):
             perf_counter() - start
         )
 
+        updated_parameters = get_weights(self.net)
+
+        upload_model_bytes = sum(
+            np.asarray(array).nbytes
+            for array in updated_parameters
+        )
+
         return (
-            get_weights(self.net),
+            updated_parameters,
             len(self.trainloader.dataset),
             {
                 "train_loss": train_loss,
                 "local_train_seconds": local_train_seconds,
+                "raw_model_download_bytes": download_model_bytes,
+                "raw_model_upload_bytes": upload_model_bytes,
             },
         )
 
@@ -118,7 +152,7 @@ class FlowerClient(NumPyClient):
 
 
 def client_fn(context: Context):
-    """Create one deterministic logical client."""
+    """Create deterministic logical client."""
 
     partition_id = int(
         context.node_config["partition-id"]
