@@ -35,8 +35,9 @@ local-epochs = 1
 learning-rate = 0.1
 batch-size = 32
 seed = 42
+dropout-rate = 0.0
 
 # SecAgg+ configuration
 num-shares = 5
 reconstruction-threshold = 3
-max-weight = 2500
+max-weight = 2000

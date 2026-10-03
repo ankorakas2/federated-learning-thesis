@@ -1,13 +1,20 @@
 """Shared instrumented ClientApp for Plain FedAvg and SecAgg+."""
 
 import os
+import random
 from time import perf_counter
 
 import numpy as np
 import torch
 from flwr.client import ClientApp, NumPyClient
 from flwr.client.mod import secaggplus_mod
-from flwr.common import Context
+from flwr.common import Context, Error, Message
+
+from flwr.common.secure_aggregation.secaggplus_constants import (
+    RECORD_KEY_CONFIGS,
+    Key,
+    Stage,
+)
 
 from thesis_compare.measurement import (
     append_message_trace,
@@ -23,17 +30,126 @@ from thesis_compare.task import (
 )
 
 
-def protocol_mod(msg, context, call_next):
-    """Enable SecAgg+ conditionally and trace serialized traffic."""
+def _dropout_set(context, round_number):
+    """Return deterministic logical clients that drop in this round."""
 
-    protocol = str(context.run_config["protocol"])
+    dropout_rate = float(
+        context.run_config.get("dropout-rate", 0.0)
+    )
+
+    num_clients = int(
+        context.run_config["num-clients"]
+    )
+
+    if dropout_rate <= 0.0:
+        return set()
+
+    dropout_count = int(
+        round(dropout_rate * num_clients)
+    )
+
+    dropout_count = max(
+        0,
+        min(dropout_count, num_clients - 1),
+    )
+
+    seed = int(
+        context.run_config["seed"]
+    )
+
+    rng = random.Random(
+        seed * 1_000_003
+        + round_number * 97_409
+    )
+
+    return set(
+        rng.sample(
+            range(num_clients),
+            dropout_count,
+        )
+    )
+
+
+def protocol_mod(msg, context, call_next):
+    """Enable SecAgg+ and deterministic controlled dropout."""
+
+    protocol = str(
+        context.run_config["protocol"]
+    )
+
     partition_id = int(
         context.node_config["partition-id"]
     )
 
+    try:
+        round_number = int(
+            str(msg.metadata.group_id)
+        )
+    except (TypeError, ValueError):
+        round_number = 0
+
+    message_type = str(
+        msg.metadata.message_type
+    )
+
     incoming_bytes = message_nbytes(msg)
 
+    secagg_stage = None
+
     if protocol == "secagg":
+        try:
+            secagg_stage = (
+                msg.content.config_records[
+                    RECORD_KEY_CONFIGS
+                ][Key.STAGE]
+            )
+        except (KeyError, AttributeError):
+            secagg_stage = None
+
+    # Plain: drop during the normal training request.
+    plain_fit = (
+        protocol == "plain"
+        and message_type.startswith("train")
+    )
+
+    # SecAgg+: drop after setup/share-keys, when the
+    # masked model vector should be returned.
+    secagg_fit = (
+        protocol == "secagg"
+        and secagg_stage
+        == Stage.COLLECT_MASKED_VECTORS
+    )
+
+    dropped = (
+        (plain_fit or secagg_fit)
+        and partition_id
+        in _dropout_set(
+            context,
+            round_number,
+        )
+    )
+
+    if dropped:
+        reason = (
+            "Controlled thesis dropout: "
+            f"protocol={protocol}, "
+            f"round={round_number}, "
+            f"partition={partition_id}"
+        )
+
+        print(
+            f"[CONTROLLED_DROPOUT] {reason}",
+            flush=True,
+        )
+
+        out_msg = Message(
+            Error(
+                code=0,
+                reason=reason,
+            ),
+            reply_to=msg,
+        )
+    elif protocol == "secagg":
         out_msg = secaggplus_mod(
             msg,
             context,
@@ -45,14 +161,21 @@ def protocol_mod(msg, context, call_next):
             context,
         )
 
-    outgoing_bytes = message_nbytes(out_msg)
+    outgoing_bytes = message_nbytes(
+        out_msg
+    )
 
     append_message_trace(
-        os.environ.get("THESIS_COMM_LOG", ""),
+        os.environ.get(
+            "THESIS_COMM_LOG",
+            "",
+        ),
         protocol=protocol,
         partition_id=partition_id,
-        message_type=str(msg.metadata.message_type),
-        group_id=str(msg.metadata.group_id),
+        message_type=message_type,
+        group_id=str(
+            msg.metadata.group_id
+        ),
         incoming_bytes=incoming_bytes,
         outgoing_bytes=outgoing_bytes,
     )

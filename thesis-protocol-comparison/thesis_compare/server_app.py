@@ -47,6 +47,7 @@ def aggregate_fit_metrics(metrics):
     ]
 
     return {
+        "fit_successful_clients": len(metrics),
         "train_loss": train_loss,
         "local_train_seconds_mean": (
             sum(local_times) / len(local_times)
@@ -71,6 +72,7 @@ def aggregate_evaluate_metrics(metrics):
     )
 
     return {
+        "evaluate_successful_clients": len(metrics),
         "accuracy": sum(
             num_examples * values["accuracy"]
             for num_examples, values in metrics
@@ -137,6 +139,10 @@ def main(grid: Grid, context: Context) -> None:
 
     num_rounds = int(
         context.run_config["num-server-rounds"]
+    )
+
+    dropout_rate = float(
+        context.run_config.get("dropout-rate", 0.0)
     )
 
     parameters = ndarrays_to_parameters(
@@ -272,6 +278,10 @@ def main(grid: Grid, context: Context) -> None:
         flush=True,
     )
     print(
+        f"[HARNESS] seed={seed}",
+        flush=True,
+    )
+    print(
         f"[HARNESS] rounds={num_rounds}",
         flush=True,
     )
@@ -341,9 +351,23 @@ def main(grid: Grid, context: Context) -> None:
         )
     )
 
+    fit_successful = history_values_by_round(
+        history.metrics_distributed_fit.get(
+            "fit_successful_clients",
+            [],
+        )
+    )
+
     accuracies = history_values_by_round(
         history.metrics_distributed.get(
             "accuracy",
+            [],
+        )
+    )
+
+    evaluate_successful = history_values_by_round(
+        history.metrics_distributed.get(
+            "evaluate_successful_clients",
             [],
         )
     )
@@ -368,8 +392,14 @@ def main(grid: Grid, context: Context) -> None:
     ) as file:
         fieldnames = [
             "protocol",
+            "seed",
+            "dropout_rate",
             "clients",
             "round",
+            "fit_successful_clients",
+            "fit_failed_clients",
+            "evaluate_successful_clients",
+            "evaluate_failed_clients",
             "fit_seconds",
             "evaluate_seconds",
             "measured_round_seconds",
@@ -429,8 +459,29 @@ def main(grid: Grid, context: Context) -> None:
             writer.writerow(
                 {
                     "protocol": protocol,
+                    "seed": seed,
+                    "dropout_rate": dropout_rate,
                     "clients": num_clients,
                     "round": round_number,
+                    "fit_successful_clients": fit_successful.get(
+                        round_number
+                    ),
+                    "fit_failed_clients": (
+                        num_clients
+                        - int(fit_successful.get(round_number, 0))
+                    ),
+                    "evaluate_successful_clients": (
+                        evaluate_successful.get(round_number)
+                    ),
+                    "evaluate_failed_clients": (
+                        num_clients
+                        - int(
+                            evaluate_successful.get(
+                                round_number,
+                                0,
+                            )
+                        )
+                    ),
                     "fit_seconds": fit_seconds,
                     "evaluate_seconds": evaluate_seconds,
                     "measured_round_seconds": (
@@ -503,6 +554,7 @@ def main(grid: Grid, context: Context) -> None:
     summary = {
         "protocol": protocol,
         "seed": seed,
+        "dropout_rate": dropout_rate,
         "num_clients": num_clients,
         "num_rounds": num_rounds,
         "wall_seconds": wall_seconds,
@@ -539,6 +591,16 @@ def main(grid: Grid, context: Context) -> None:
             if protocol == "secagg"
             else None
         ),
+        "max_weight": (
+            float(
+                context.run_config["max-weight"]
+            )
+            if protocol == "secagg"
+            else None
+        ),
+        "dataset": "CIFAR-10",
+        "data_distribution": "IID",
+        "model": "CNN",
         "serialized_communication": (
             comm["overall"]
         ),
